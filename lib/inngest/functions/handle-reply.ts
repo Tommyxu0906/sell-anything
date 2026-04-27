@@ -10,10 +10,13 @@ import { eq, and } from "drizzle-orm";
 import { classifyReply } from "@/lib/ai/classify-reply";
 import { draftReply } from "@/lib/ai/draft-email";
 import { addToSuppressionList } from "@/lib/compliance/unsubscribe";
+import type { contacts as contactsTable, organizations as orgsTable } from "@/lib/db/schema";
+import type { InferSelectModel } from "drizzle-orm";
+type Contact = InferSelectModel<typeof contactsTable>;
+type Org = InferSelectModel<typeof orgsTable>;
 
 export const handleReply = inngest.createFunction(
-  { id: "handle-reply", name: "Handle inbound reply" },
-  { event: "reply/received" },
+  { id: "handle-reply", name: "Handle inbound reply", triggers: [{ event: "reply/received" }] },
   async ({ event, step }) => {
     const { orgId, contactId, messageId } = event.data;
 
@@ -102,8 +105,8 @@ export const handleReply = inngest.createFunction(
       draftReply({
         replyBody: message.body,
         classification,
-        contact,
-        org,
+        contact: contact as unknown as Contact,
+        org: org as unknown as Org,
       })
     );
 

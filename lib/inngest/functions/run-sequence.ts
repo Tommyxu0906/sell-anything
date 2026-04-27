@@ -13,19 +13,22 @@ import { sendEmail } from "@/lib/integrations/resend";
 import { checkCompliance } from "@/lib/compliance/dnc";
 import { addDays, isWeekend, nextMonday, set } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import type { InferSelectModel } from "drizzle-orm";
+import type { contacts as contactsTable, organizations as orgsTable } from "@/lib/db/schema";
+type Contact = InferSelectModel<typeof contactsTable>;
+type Org = InferSelectModel<typeof orgsTable>;
 
 export const runSequence = inngest.createFunction(
   {
     id: "run-sequence",
     name: "Run outreach sequence step",
+    triggers: [{ event: "outreach/send" }],
     throttle: {
-      // max 200 emails per hour across all orgs (deliverability guard)
       limit: 200,
       period: "1h",
       key: "event.data.orgId",
     },
   },
-  { event: "outreach/send" },
   async ({ event, step }) => {
     const { contactSequenceId, orgId } = event.data;
 
@@ -97,8 +100,8 @@ export const runSequence = inngest.createFunction(
     // Draft email via Claude (with prompt caching)
     const draft = await step.run("draft-email", () =>
       draftEmail({
-        contact,
-        org,
+        contact: contact as unknown as Contact,
+        org: org as unknown as Org,
         subjectTemplate: seqStep.subjectTemplate ?? "",
         bodyTemplate: seqStep.bodyTemplate ?? "",
         stepNumber,

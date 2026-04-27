@@ -42,7 +42,7 @@ export async function draftEmail({
           {
             type: "text",
             text: playbookPrefix,
-            experimental_providerMetadata: {
+            providerOptions: {
               anthropic: { cacheControl: { type: "ephemeral" } },
             },
           },
@@ -107,7 +107,7 @@ export async function draftReply({
           {
             type: "text",
             text: playbookPrefix,
-            experimental_providerMetadata: {
+            providerOptions: {
               anthropic: { cacheControl: { type: "ephemeral" } },
             },
           },
