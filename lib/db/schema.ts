@@ -135,7 +135,7 @@ export const playbooks = pgTable("playbooks", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   isDefault: boolean("is_default").default(false),
-  icpDescription: text("icp_description"), // free-text ICP for LLM
+  icpDescription: text("icp_description"),
   targetIndustries: text("target_industries").array(),
   targetJobTitles: text("target_job_titles").array(),
   companySize: jsonb("company_size"), // { min: 10, max: 500 }
@@ -143,6 +143,14 @@ export const playbooks = pgTable("playbooks", {
   brandVoice: text("brand_voice"),
   objectionHandlers: jsonb("objection_handlers"), // [{ trigger, response }]
   caseStudies: text("case_studies"),
+  // customization layer
+  industry: text("industry"), // primary industry category (from preset or AI-detected)
+  tone: text("tone"), // professional | consultative | direct | casual | challenger
+  sequenceStrategy: text("sequence_strategy"), // aggressive | balanced | nurture | enterprise
+  icpScoreWeights: jsonb("icp_score_weights"), // { industry: 30, title: 40, size: 30 }
+  learningContext: text("learning_context"), // AI-generated summary of what works for this org
+  aiGenerated: boolean("ai_generated").default(false),
+  generatedFrom: text("generated_from"), // the original description used to generate this playbook
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -201,6 +209,10 @@ export const contacts = pgTable(
     // enrichment
     apolloId: text("apollo_id"),
     enrichedAt: timestamp("enriched_at"),
+    // per-contact AI customization
+    toneOverride: text("tone_override"), // override org tone for this specific contact
+    approachOverride: text("approach_override"), // e.g. "more technical", "focus on ROI", "use case study X"
+    contactMemory: text("contact_memory"), // AI-maintained running summary of all interactions
     // assignment
     assignedUserId: uuid("assigned_user_id"),
     notes: text("notes"),
@@ -227,6 +239,10 @@ export const sequences = pgTable(
     playbookId: uuid("playbook_id").references(() => playbooks.id),
     name: text("name").notNull(),
     isActive: boolean("is_active").default(true),
+    // per-sequence strategy (overrides org defaults)
+    strategy: text("strategy").default("balanced"), // aggressive | balanced | nurture | enterprise
+    tone: text("tone"), // professional | consultative | direct | casual | challenger
+    industryContext: text("industry_context"), // extra context for this sequence's target segment
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -306,6 +322,13 @@ export const messages = pgTable(
     replyClassification: replyClassificationEnum("reply_classification"),
     aiDraftReply: text("ai_draft_reply"),
     aiDraftSubject: text("ai_draft_subject"),
+    // captured when human edits before sending (learning signal)
+    userEditedSubject: text("user_edited_subject"),
+    userEditedBody: text("user_edited_body"),
+    wasEdited: boolean("was_edited").default(false),
+    // engagement tracking
+    openedAt: timestamp("opened_at"),
+    repliedAt: timestamp("replied_at"),
     metadata: jsonb("metadata"), // provider-specific data (Resend ID, Postmark ID, etc.)
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -356,6 +379,51 @@ export const suppressionList = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [index("suppression_email_org_idx").on(t.email, t.orgId)]
+);
+
+// ─── Org Learnings (accumulated preference + performance signals) ─────────────
+
+export const orgLearnings = pgTable(
+  "org_learnings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    category: text("category").notNull(), // style | timing | content | subject | performance
+    key: text("key").notNull(), // e.g. "preferred_length", "avoid_phrases", "best_send_day"
+    value: jsonb("value").notNull(), // flexible — string, number, array, object
+    confidence: text("confidence").default("0.5"), // 0-1 as text to avoid float issues
+    evidenceCount: integer("evidence_count").default(1),
+    lastUpdatedAt: timestamp("last_updated_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("org_learnings_org_id_idx").on(t.orgId),
+    index("org_learnings_category_idx").on(t.orgId, t.category),
+  ]
+);
+
+// ─── Draft Edits (captures before/after when human edits AI draft) ────────────
+
+export const draftEdits = pgTable(
+  "draft_edits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    aiSubject: text("ai_subject"),
+    aiBody: text("ai_body"),
+    userSubject: text("user_subject"),
+    userBody: text("user_body"),
+    diffInsights: jsonb("diff_insights"), // { lengthChange, removedPhrases, addedPhrases, toneShift }
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("draft_edits_org_id_idx").on(t.orgId)]
 );
 
 // ─── Integrations (encrypted OAuth tokens) ───────────────────────────────────

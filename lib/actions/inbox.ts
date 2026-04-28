@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db/client";
-import { messages, activities } from "@/lib/db/schema";
+import { messages, activities, draftEdits } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/current-org";
 import { eq, and } from "drizzle-orm";
 import { sendEmail } from "@/lib/integrations/resend";
@@ -15,7 +15,6 @@ export async function approveAndSend(messageId: string) {
 
   if (!msg || msg.reviewStatus === "sent") return;
 
-  // For reply drafts — send the AI draft
   const bodyToSend = msg.aiDraftReply ?? msg.body;
   const subjectToSend = msg.aiDraftSubject ?? msg.subject ?? "Follow up";
 
@@ -59,6 +58,40 @@ export async function editAndSend(messageId: string, subject: string, body: stri
     .where(and(eq(messages.id, messageId), eq(messages.orgId, org.id))).limit(1);
 
   if (!msg) return;
+
+  const aiSubject = msg.aiDraftSubject ?? msg.subject;
+  const aiBody = msg.aiDraftReply ?? msg.body;
+  const subjectChanged = subject !== aiSubject;
+  const bodyChanged = body !== aiBody;
+  const wasEdited = subjectChanged || bodyChanged;
+
+  // Capture edit diff as a learning signal
+  if (wasEdited) {
+    const aiWords = aiBody?.split(/\s+/).length ?? 0;
+    const userWords = body.split(/\s+/).length ?? 0;
+
+    await db.insert(draftEdits).values({
+      orgId: org.id,
+      messageId,
+      aiSubject,
+      aiBody,
+      userSubject: subject,
+      userBody: body,
+      diffInsights: {
+        wordCountChange: userWords - aiWords,
+        subjectChanged,
+        bodyLengthRatio: aiWords > 0 ? (userWords / aiWords).toFixed(2) : "1",
+      },
+    });
+
+    await db.update(messages)
+      .set({
+        wasEdited: true,
+        userEditedSubject: subject,
+        userEditedBody: body,
+      })
+      .where(eq(messages.id, messageId));
+  }
 
   await sendEmail({
     to: msg.toEmail ?? msg.fromEmail ?? "",
