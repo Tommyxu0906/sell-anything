@@ -6,7 +6,7 @@ import { contacts } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/current-org";
 import { eq, desc } from "drizzle-orm";
 import Link from "next/link";
-import { UserPlus, Upload } from "lucide-react";
+import { UserPlus, Upload, Phone } from "lucide-react";
 
 const STAGE_COLORS: Record<string, string> = {
   new: "bg-gray-100 text-gray-700",
@@ -63,12 +63,13 @@ export default async function ContactsPage() {
                 <th className="px-4 py-3 font-medium text-muted-foreground">Title</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">Stage</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">Score</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground"></th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                     No contacts yet. AI is prospecting leads based on your ICP.
                   </td>
                 </tr>
@@ -93,6 +94,13 @@ export default async function ContactsPage() {
                           {contact.icpScore}
                         </Badge>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link href={`/call-prep/${contact.id}`}>
+                        <Button variant="ghost" size="sm" className="gap-1 text-xs text-muted-foreground hover:text-foreground">
+                          <Phone className="h-3.5 w-3.5" /> Prep Call
+                        </Button>
+                      </Link>
                     </td>
                   </tr>
                 ))
