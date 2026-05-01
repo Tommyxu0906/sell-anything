@@ -210,9 +210,10 @@ export const contacts = pgTable(
     apolloId: text("apollo_id"),
     enrichedAt: timestamp("enriched_at"),
     // per-contact AI customization
-    toneOverride: text("tone_override"), // override org tone for this specific contact
-    approachOverride: text("approach_override"), // e.g. "more technical", "focus on ROI", "use case study X"
-    contactMemory: text("contact_memory"), // AI-maintained running summary of all interactions
+    toneOverride: text("tone_override"),
+    approachOverride: text("approach_override"),
+    contactMemory: text("contact_memory"),
+    preferredLanguage: text("preferred_language").default("english"), // english | mandarin | bilingual
     // assignment
     assignedUserId: uuid("assigned_user_id"),
     notes: text("notes"),

@@ -59,6 +59,10 @@ ALTER TABLE messages
   ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ;
 
+-- Language preference per contact (for bilingual/Mandarin AI drafting)
+ALTER TABLE contacts
+  ADD COLUMN IF NOT EXISTS preferred_language TEXT DEFAULT 'english';
+
 -- RLS for new tables
 ALTER TABLE org_learnings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE draft_edits ENABLE ROW LEVEL SECURITY;

@@ -19,6 +19,7 @@ interface DraftEmailParams {
   stepNumber: number;
   sequenceTone?: string | null;
   sequenceStrategy?: string | null;
+  language?: "english" | "mandarin" | "bilingual" | null;
 }
 
 interface DraftReplyParams {
@@ -40,6 +41,7 @@ export async function draftEmail({
   stepNumber,
   sequenceTone,
   sequenceStrategy,
+  language,
 }: DraftEmailParams): Promise<{ subject: string; body: string }> {
   // Merge sequence-level tone/strategy overrides into a temp playbook-like object
   const effectivePlaybook = playbook
@@ -52,11 +54,21 @@ export async function draftEmail({
 
   const playbookPrefix = buildPlaybookPrefix({ org, playbook: effectivePlaybook, learnings });
 
+  // Resolve language — contact preference takes priority over call-site param
+  const effectiveLang = (contact.preferredLanguage ?? language ?? "english") as string;
+
   const contactOverrides = [
     contact.toneOverride ? `Tone override for this contact: ${contact.toneOverride}` : null,
     contact.approachOverride ? `Approach override: ${contact.approachOverride}` : null,
     contact.contactMemory ? `Prior interaction context: ${contact.contactMemory}` : null,
   ].filter(Boolean).join("\n");
+
+  const languageInstruction =
+    effectiveLang === "mandarin"
+      ? `IMPORTANT: Write the entire email in Simplified Chinese (普通话/简体中文). Subject line also in Chinese. The sender speaks fluent Mandarin and this prospect prefers Chinese communication. Use natural, professional Chinese — not translated English. Warm but not overly formal (您 is fine for first touch, 你 is ok after rapport).`
+      : effectiveLang === "bilingual"
+      ? `Write the email in English first, then add a horizontal divider (---) followed by a brief Chinese (Simplified) version of the key points. Subject line in English. The Chinese section should be 2-3 sentences max — not a full translation, just the main value and ask. This shows the sender is Mandarin-capable without overwhelming an English-comfortable reader.`
+      : `Write in English.`;
 
   const { text } = await generateText({
     model: anthropic("claude-sonnet-4-6"),
@@ -84,6 +96,8 @@ ${contactOverrides ? `\nPer-contact customization:\n${contactOverrides}` : ""}
 Step ${stepNumber} of the sequence.
 Subject template: "${subjectTemplate}"
 Body template/guidance: "${bodyTemplate}"
+
+Language: ${languageInstruction}
 
 Rules:
 - Apply all learned style rules from the prefix (those override defaults)
