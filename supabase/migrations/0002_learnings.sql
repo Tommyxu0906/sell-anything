@@ -63,6 +63,13 @@ ALTER TABLE messages
 ALTER TABLE contacts
   ADD COLUMN IF NOT EXISTS preferred_language TEXT DEFAULT 'english';
 
+-- Business line tagging (real_estate | life_insurance)
+ALTER TABLE contacts
+  ADD COLUMN IF NOT EXISTS business_line TEXT DEFAULT 'real_estate';
+
+ALTER TABLE sequences
+  ADD COLUMN IF NOT EXISTS business_line TEXT DEFAULT 'real_estate';
+
 -- RLS for new tables
 ALTER TABLE org_learnings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE draft_edits ENABLE ROW LEVEL SECURITY;

@@ -1,55 +1,65 @@
-import { Header } from "@/components/dashboard/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db/client";
-import { contacts, messages, activities } from "@/lib/db/schema";
+import { contacts, messages, activities, sequences } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/current-org";
 import { eq, and, count, desc } from "drizzle-orm";
-import { Users, Mail, MessageSquare, Calendar, Zap, ArrowRight } from "lucide-react";
+import { Users, Mail, MessageSquare, Home, Shield, ArrowRight, Clock } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
+import { Header } from "@/components/dashboard/header";
 
-async function getDashboardData(orgId: string) {
-  const [
-    [{ totalLeads }],
-    [{ emailsSent }],
-    [{ replies }],
-    recentActivity,
-    pendingReview,
-  ] = await Promise.all([
-    db.select({ totalLeads: count() }).from(contacts).where(eq(contacts.orgId, orgId)),
-    db
-      .select({ emailsSent: count() })
-      .from(messages)
-      .where(and(eq(messages.orgId, orgId), eq(messages.direction, "outbound"), eq(messages.reviewStatus, "sent"))),
-    db
-      .select({ replies: count() })
-      .from(messages)
-      .where(and(eq(messages.orgId, orgId), eq(messages.direction, "inbound"))),
-    db
-      .select()
-      .from(activities)
-      .where(eq(activities.orgId, orgId))
-      .orderBy(desc(activities.createdAt))
-      .limit(10),
-    db
-      .select({ pending: count() })
-      .from(messages)
-      .where(and(eq(messages.orgId, orgId), eq(messages.reviewStatus, "pending"))),
-  ]);
-
-  return {
-    totalLeads,
-    emailsSent,
-    replies,
-    recentActivity,
-    pendingReview: pendingReview[0].pending,
-  };
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
 }
 
+async function getLineData(orgId: string, businessLine: string) {
+  const [
+    [{ leads }],
+    [{ pending }],
+    [{ sent }],
+    [{ replies }],
+  ] = await Promise.all([
+    db.select({ leads: count() }).from(contacts)
+      .where(and(eq(contacts.orgId, orgId), eq(contacts.businessLine, businessLine))),
+    db.select({ pending: count() }).from(messages)
+      .where(and(eq(messages.orgId, orgId), eq(messages.reviewStatus, "pending"))),
+    db.select({ sent: count() }).from(messages)
+      .where(and(eq(messages.orgId, orgId), eq(messages.reviewStatus, "sent"))),
+    db.select({ replies: count() }).from(messages)
+      .where(and(eq(messages.orgId, orgId), eq(messages.direction, "inbound"))),
+  ]);
+  return { leads, pending, sent, replies };
+}
+
+async function getDashboardData(orgId: string) {
+  const [re, ins, recentActivity] = await Promise.all([
+    getLineData(orgId, "real_estate"),
+    getLineData(orgId, "life_insurance"),
+    db.select().from(activities).where(eq(activities.orgId, orgId))
+      .orderBy(desc(activities.createdAt)).limit(12),
+  ]);
+  return { re, ins, recentActivity };
+}
+
+const LINE_ACTIVITY_ICONS: Record<string, string> = {
+  email_sent: "✉️",
+  replied: "💬",
+  stage_changed: "📋",
+  note: "📝",
+  meeting_booked: "📅",
+};
+
 export default async function DashboardPage() {
-  let data = { totalLeads: 0, emailsSent: 0, replies: 0, recentActivity: [] as typeof activities.$inferSelect[], pendingReview: 0 };
+  let data = {
+    re: { leads: 0, pending: 0, sent: 0, replies: 0 },
+    ins: { leads: 0, pending: 0, sent: 0, replies: 0 },
+    recentActivity: [] as (typeof activities.$inferSelect)[],
+  };
 
   try {
     const org = await requireOrg();
@@ -58,123 +68,164 @@ export default async function DashboardPage() {
     // DB not connected — show empty state
   }
 
-  const STATS = [
-    { label: "Leads Prospected", value: data.totalLeads, icon: Users, color: "text-blue-500" },
-    { label: "Emails Sent", value: data.emailsSent, icon: Mail, color: "text-green-500" },
-    { label: "Replies Received", value: data.replies, icon: MessageSquare, color: "text-yellow-500" },
-    { label: "Meetings Booked", value: 0, icon: Calendar, color: "text-purple-500" },
-  ];
+  const totalPending = data.re.pending + data.ins.pending;
 
   return (
     <div>
       <Header title="Dashboard" />
       <div className="p-6 space-y-6">
-        {/* Agent status banner */}
-        <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Zap className="h-6 w-6 text-primary" />
-              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
-            </div>
-            <div>
-              <p className="font-semibold text-sm">AI Agent is running</p>
-              <p className="text-xs text-muted-foreground">Prospecting leads and sending outreach automatically</p>
-            </div>
+
+        {/* Personal greeting */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">{getGreeting()}, Kanghuan 👋</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </p>
           </div>
-          {data.pendingReview > 0 && (
+          {totalPending > 0 && (
             <Link href="/inbox">
-              <Button size="sm" variant="outline">
-                {data.pendingReview} drafts to review
-                <ArrowRight className="ml-2 h-3 w-3" />
+              <Button className="gap-2">
+                <Clock className="h-4 w-4" />
+                {totalPending} draft{totalPending !== 1 ? "s" : ""} to review
+                <ArrowRight className="h-3 w-3" />
               </Button>
             </Link>
           )}
         </div>
 
-        {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map(({ label, value, icon: Icon, color }) => (
-            <Card key={label}>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{label}</p>
-                    <p className="mt-1 text-3xl font-bold">{value.toLocaleString()}</p>
+        {/* Two-panel business line overview */}
+        <div className="grid gap-4 lg:grid-cols-2">
+
+          {/* Real Estate */}
+          <Card className="border-orange-200/60 bg-orange-50/30 dark:border-orange-900/30 dark:bg-orange-950/10">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-orange-500/10">
+                    <Home className="h-4 w-4 text-orange-600" />
                   </div>
-                  <Icon className={`h-8 w-8 ${color} opacity-80`} />
+                  <div>
+                    <CardTitle className="text-sm font-semibold">Real Estate</CardTitle>
+                    <p className="text-[10px] text-muted-foreground">Prophet Homes</p>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+                {data.re.pending > 0 && (
+                  <Badge variant="destructive" className="text-xs">{data.re.pending} pending</Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-2xl font-bold">{data.re.leads}</p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Users className="h-3 w-3" /> Leads</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{data.re.sent}</p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Mail className="h-3 w-3" /> Sent</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{data.re.replies}</p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><MessageSquare className="h-3 w-3" /> Replies</p>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Link href="/inbox?line=real_estate" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full text-xs">Inbox</Button>
+                </Link>
+                <Link href="/contacts?line=real_estate" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full text-xs">Contacts</Button>
+                </Link>
+                <Link href="/sequences?line=real_estate" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full text-xs">Sequences</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Life Insurance */}
+          <Card className="border-blue-200/60 bg-blue-50/30 dark:border-blue-900/30 dark:bg-blue-950/10">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-500/10">
+                    <Shield className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-sm font-semibold">Life Insurance</CardTitle>
+                    <p className="text-[10px] text-muted-foreground">National Life Group</p>
+                  </div>
+                </div>
+                {data.ins.pending > 0 && (
+                  <Badge variant="destructive" className="text-xs">{data.ins.pending} pending</Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-2xl font-bold">{data.ins.leads}</p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Users className="h-3 w-3" /> Leads</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{data.ins.sent}</p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Mail className="h-3 w-3" /> Sent</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{data.ins.replies}</p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><MessageSquare className="h-3 w-3" /> Replies</p>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Link href="/inbox?line=life_insurance" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full text-xs">Inbox</Button>
+                </Link>
+                <Link href="/contacts?line=life_insurance" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full text-xs">Contacts</Button>
+                </Link>
+                <Link href="/sequences?line=life_insurance" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full text-xs">Sequences</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Activity feed */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Recent Activity</CardTitle>
-              <Link href="/contacts" className="text-xs text-primary hover:underline">
-                View all
-              </Link>
-            </CardHeader>
-            <CardContent>
-              {data.recentActivity.length === 0 ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  <Zap className="mx-auto mb-2 h-8 w-8 opacity-30" />
-                  <p>No activity yet. AI is getting started.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {data.recentActivity.map((a) => (
-                    <div key={a.id} className="flex items-start gap-3 text-sm">
-                      <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm">{a.description}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}
-                        </p>
-                      </div>
+        {/* Combined activity feed */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-base">Recent Activity</CardTitle>
+            <Link href="/contacts" className="text-xs text-primary hover:underline">View all contacts</Link>
+          </CardHeader>
+          <CardContent>
+            {data.recentActivity.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                <p className="text-2xl mb-2">🤖</p>
+                <p>No activity yet — AI starts working after you enroll contacts in a sequence.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {data.recentActivity.map((a) => (
+                  <div key={a.id} className="flex items-start gap-3 py-1.5 text-sm border-b last:border-0">
+                    <span className="text-base leading-none mt-0.5">{LINE_ACTIVITY_ICONS[a.type] ?? "•"}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm leading-snug">{a.description}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Link href="/inbox">
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Review AI drafts
-                  {data.pendingReview > 0 && (
-                    <Badge className="ml-auto" variant="default">{data.pendingReview}</Badge>
-                  )}
-                </Button>
-              </Link>
-              <Link href="/contacts">
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <Users className="h-4 w-4" />
-                  View all contacts
-                </Button>
-              </Link>
-              <Link href="/sequences">
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <Mail className="h-4 w-4" />
-                  Manage sequences
-                </Button>
-              </Link>
-              <Link href="/settings">
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <Zap className="h-4 w-4" />
-                  Adjust AI autonomy
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+        {/* Cross-sell reminder */}
+        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground mb-1">💡 Cross-sell opportunity</p>
+          <p>Every real estate client is a potential insurance client. New homeowners especially — they just took on a mortgage and need protection coverage. Flag them with <code className="text-xs bg-muted px-1 py-0.5 rounded">businessLine = life_insurance</code> to add to an insurance sequence too.</p>
         </div>
       </div>
     </div>

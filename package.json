@@ -12,7 +12,8 @@
     "db:studio": "drizzle-kit studio",
     "inngest:dev": "npx inngest-cli@latest dev",
     "seed:prophet": "dotenv -e .env.local -- tsx scripts/seed-prophet.ts",
-    "seed:boston": "dotenv -e .env.local -- tsx scripts/seed-boston-chinese.ts"
+    "seed:boston": "dotenv -e .env.local -- tsx scripts/seed-boston-chinese.ts",
+    "seed:nlg": "dotenv -e .env.local -- tsx scripts/seed-national-life.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",

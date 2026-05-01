@@ -11,7 +11,7 @@ import type { InferSelectModel } from "drizzle-orm";
 
 type Playbook = InferSelectModel<typeof playbooks>;
 
-export function PlaybookSettings({ playbook }: { playbook: Playbook | null }) {
+export function PlaybookSettings({ playbook, label }: { playbook: Playbook | null; label?: string }) {
   const [data, setData] = useState({
     valueProp: playbook?.valueProp ?? "",
     brandVoice: playbook?.brandVoice ?? "",

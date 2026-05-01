@@ -5,16 +5,19 @@ import { PlaybookSettings } from "./playbook-settings";
 import { requireOrg } from "@/lib/auth/current-org";
 import { db } from "@/lib/db/client";
 import { playbooks } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { Home, Shield, Sliders } from "lucide-react";
 
 export default async function SettingsPage() {
   let org = null;
-  let playbook = null;
+  let rePlaybook = null;
+  let insPlaybook = null;
 
   try {
     org = await requireOrg();
-    const [pb] = await db.select().from(playbooks).where(eq(playbooks.orgId, org.id)).limit(1);
-    playbook = pb;
+    const allPlaybooks = await db.select().from(playbooks).where(eq(playbooks.orgId, org.id));
+    rePlaybook = allPlaybooks.find((p) => p.industry === "commercial-real-estate" || p.isDefault) ?? allPlaybooks[0] ?? null;
+    insPlaybook = allPlaybooks.find((p) => p.industry === "life-insurance") ?? null;
   } catch {
     // DB not connected
   }
@@ -23,37 +26,44 @@ export default async function SettingsPage() {
     <div>
       <Header title="Settings" />
       <div className="p-6">
-        <Tabs defaultValue="autonomy">
+        <Tabs defaultValue="real-estate">
           <TabsList>
-            <TabsTrigger value="autonomy">AI Autonomy</TabsTrigger>
-            <TabsTrigger value="playbook">Playbook</TabsTrigger>
-            <TabsTrigger value="billing">Billing</TabsTrigger>
+            <TabsTrigger value="real-estate" className="gap-1.5">
+              <Home className="h-3.5 w-3.5 text-orange-500" /> Real Estate
+            </TabsTrigger>
+            <TabsTrigger value="insurance" className="gap-1.5">
+              <Shield className="h-3.5 w-3.5 text-blue-500" /> Life Insurance
+            </TabsTrigger>
+            <TabsTrigger value="preferences" className="gap-1.5">
+              <Sliders className="h-3.5 w-3.5" /> AI Preferences
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="autonomy" className="mt-6">
+          <TabsContent value="real-estate" className="mt-6">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">Prophet Homes — Real Estate Playbook</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">Controls how the AI writes all real estate outreach and scores investor leads.</p>
+            </div>
+            <PlaybookSettings playbook={rePlaybook} label="Real Estate" />
+          </TabsContent>
+
+          <TabsContent value="insurance" className="mt-6">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">National Life Group — Insurance Playbook</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">Controls how the AI writes insurance outreach. All drafts are compliant — you review before sending.</p>
+            </div>
+            <PlaybookSettings playbook={insPlaybook} label="Life Insurance" />
+          </TabsContent>
+
+          <TabsContent value="preferences" className="mt-6">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">AI Autonomy Preferences</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">Control how much the AI does automatically vs. waiting for your review.</p>
+            </div>
             <AutonomySettings
               orgId={org?.id}
               initialSettings={(org?.autonomySettings as Record<string, string>) ?? {}}
             />
-          </TabsContent>
-
-          <TabsContent value="playbook" className="mt-6">
-            <PlaybookSettings playbook={playbook} />
-          </TabsContent>
-
-          <TabsContent value="billing" className="mt-6">
-            <div className="rounded-xl border p-6">
-              <h2 className="text-lg font-semibold">Billing</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Manage your subscription and billing details.
-              </p>
-              <a
-                href="#"
-                className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                Open billing portal
-              </a>
-            </div>
           </TabsContent>
         </Tabs>
       </div>

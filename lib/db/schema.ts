@@ -209,6 +209,8 @@ export const contacts = pgTable(
     // enrichment
     apolloId: text("apollo_id"),
     enrichedAt: timestamp("enriched_at"),
+    // business line tagging
+    businessLine: text("business_line").default("real_estate"), // real_estate | life_insurance
     // per-contact AI customization
     toneOverride: text("tone_override"),
     approachOverride: text("approach_override"),
@@ -240,6 +242,7 @@ export const sequences = pgTable(
     playbookId: uuid("playbook_id").references(() => playbooks.id),
     name: text("name").notNull(),
     isActive: boolean("is_active").default(true),
+    businessLine: text("business_line").default("real_estate"), // real_estate | life_insurance
     // per-sequence strategy (overrides org defaults)
     strategy: text("strategy").default("balanced"), // aggressive | balanced | nurture | enterprise
     tone: text("tone"), // professional | consultative | direct | casual | challenger
