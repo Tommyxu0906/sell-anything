@@ -7,8 +7,9 @@ import { getStrategyView, type StrategyView } from "@/lib/data/strategy";
 import { CHANNEL_LABELS, type ChannelScore, type Channel } from "@/lib/strategy/channel-model";
 import { rerunResearch } from "@/lib/actions/offerings";
 import { AutoRefresh } from "./auto-refresh";
-import { Loader2, RefreshCw, TrendingUp, Zap, DollarSign, ChevronRight, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, TrendingUp, Zap, DollarSign, ChevronRight, Sparkles, Search } from "lucide-react";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,13 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
                     <Badge key={c} className="text-xs">{CHANNEL_LABELS[c as Channel] ?? c}</Badge>
                   ))}
                 </div>
+                {strategy.recommended.includes("seo_content" as Channel) && (
+                  <Link href={`/offerings/${offering.id}/seo`} className="inline-block">
+                    <Button size="sm" variant="outline" className="gap-1.5">
+                      <Search className="h-3.5 w-3.5" /> Open SEO toolkit <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </Link>
+                )}
               </CardContent>
             </Card>
 
