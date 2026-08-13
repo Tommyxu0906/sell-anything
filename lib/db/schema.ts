@@ -70,6 +70,52 @@ export const reviewStatusEnum = pgEnum("review_status", [
   "sent",
 ]);
 
+// Sales channels the strategy engine can recommend + build assist for
+export const channelEnum = pgEnum("channel", [
+  "outbound_email",
+  "cold_call",
+  "seo_content",
+  "paid_search",
+  "social_organic",
+  "social_paid",
+  "referral",
+  "local_presence",
+]);
+
+// Lifecycle of a market-research run for an offering
+export const researchStatusEnum = pgEnum("research_status", [
+  "queued",
+  "planning",
+  "gathering",
+  "extracting",
+  "scoring",
+  "synthesizing",
+  "done",
+  "failed",
+]);
+
+// Offering classification (drives channel-fit priors)
+export const audienceTypeEnum = pgEnum("audience_type", [
+  "b2b",
+  "b2c",
+  "local",
+  "mixed",
+]);
+
+export const priceBandEnum = pgEnum("price_band", [
+  "low",
+  "mid",
+  "high",
+  "enterprise",
+]);
+
+export const offeringStatusEnum = pgEnum("offering_status", [
+  "draft",
+  "researching",
+  "ready",
+  "active",
+]);
+
 // ─── Multi-tenant core ────────────────────────────────────────────────────────
 
 export const organizations = pgTable("organizations", {
@@ -136,6 +182,7 @@ export const playbooks = pgTable("playbooks", {
   orgId: uuid("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
+  offeringId: uuid("offering_id"), // FK added post-hoc (offerings defined below); one playbook per offering
   name: text("name").notNull(),
   isDefault: boolean("is_default").default(false),
   icpDescription: text("icp_description"),
@@ -157,6 +204,126 @@ export const playbooks = pgTable("playbooks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ─── Offerings (the thing being sold) ─────────────────────────────────────────
+// Central object of the "sell anything" model. Each offering gets its own market
+// research run, channel-fit strategy, playbook, contacts, and sequences.
+
+export const offerings = pgTable(
+  "offerings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull(), // what you're selling, in the seller's words
+    url: text("url"), // product/company website (used as a research signal source)
+    category: text("category"), // free-text or preset id, e.g. "b2b-saas", "local-service"
+    // classification — drives channel-fit priors in the scoring model
+    audienceType: audienceTypeEnum("audience_type").default("b2b"),
+    priceModel: text("price_model"), // subscription | one_time | usage | commission | retainer
+    priceBand: priceBandEnum("price_band"),
+    avgDealValue: integer("avg_deal_value"), // USD, nullable
+    salesCycle: text("sales_cycle"), // impulse | short | medium | long
+    geoScope: text("geo_scope"), // local | regional | national | global
+    status: offeringStatusEnum("status").default("draft"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("offerings_org_id_idx").on(t.orgId)]
+);
+
+// One market-research run per offering (re-runnable). Holds the agent's plan,
+// synthesized findings, and observability metadata.
+export const marketResearch = pgTable(
+  "market_research",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    offeringId: uuid("offering_id")
+      .notNull()
+      .references(() => offerings.id, { onDelete: "cascade" }),
+    status: researchStatusEnum("status").default("queued"),
+    plan: jsonb("plan"), // LLM-generated research plan (queries + what to look for)
+    findings: jsonb("findings"), // synthesized structured findings (ICP, competitors, demand…)
+    summary: text("summary"), // human-readable synthesis
+    confidence: text("confidence"), // overall 0-1 as text
+    sources: jsonb("sources"), // [{ url, source, fetchedAt }]
+    model: text("model"), // model(s) used — observability
+    tokensUsed: integer("tokens_used"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("market_research_org_id_idx").on(t.orgId),
+    index("market_research_offering_idx").on(t.offeringId),
+  ]
+);
+
+// The auditable spine: one row per extracted signal. Answers "why did you
+// recommend channel X?" — the scoring model's contributions point back here.
+export const researchSignals = pgTable(
+  "research_signals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    offeringId: uuid("offering_id")
+      .notNull()
+      .references(() => offerings.id, { onDelete: "cascade" }),
+    researchId: uuid("research_id")
+      .notNull()
+      .references(() => marketResearch.id, { onDelete: "cascade" }),
+    source: text("source").notNull(), // "brave_search" | "page_fetch:example.com" | "llm_infer"
+    sourceType: text("source_type").notNull(), // search | page | serp | inferred
+    channel: channelEnum("channel"), // which channel this signal informs (nullable = general)
+    key: text("key").notNull(), // e.g. "search_intent_volume", "competitor_ad_presence"
+    value: jsonb("value").notNull(),
+    weight: text("weight"), // contribution weight 0-1 as text
+    confidence: text("confidence"), // 0-1 as text
+    rawExcerpt: text("raw_excerpt"), // the evidence snippet
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("research_signals_offering_idx").on(t.offeringId),
+    index("research_signals_research_idx").on(t.researchId),
+    index("research_signals_channel_idx").on(t.channel),
+  ]
+);
+
+// Output of the deterministic channel-fit scoring model + LLM strategy synthesis.
+export const channelStrategies = pgTable(
+  "channel_strategies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    offeringId: uuid("offering_id")
+      .notNull()
+      .references(() => offerings.id, { onDelete: "cascade" }),
+    researchId: uuid("research_id").references(() => marketResearch.id, {
+      onDelete: "set null",
+    }),
+    // [{ channel, fitScore, effort, cost, confidence, contributions:[{signalKey, points, reason}], rationale }]
+    scores: jsonb("scores").notNull(),
+    recommended: text("recommended").array(), // ordered top channels
+    playbookByChannel: jsonb("playbook_by_channel"), // per-channel first moves/cadence/sample asset
+    narrative: text("narrative"), // the strategy writeup
+    modelVersion: text("model_version"), // channel-model version for reproducibility
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("channel_strategies_offering_idx").on(t.offeringId),
+  ]
+);
 
 // ─── Companies + Contacts ─────────────────────────────────────────────────────
 
@@ -212,8 +379,10 @@ export const contacts = pgTable(
     // enrichment
     apolloId: text("apollo_id"),
     enrichedAt: timestamp("enriched_at"),
-    // business line tagging
-    businessLine: text("business_line").default("real_estate"), // real_estate | life_insurance
+    // which offering this contact belongs to
+    offeringId: uuid("offering_id"), // FK to offerings (nullable during migration)
+    // DEPRECATED: personal-tool tagging, being replaced by offeringId — remove once UI is off it
+    businessLine: text("business_line").default("real_estate"),
     // per-contact AI customization
     toneOverride: text("tone_override"),
     approachOverride: text("approach_override"),
@@ -243,9 +412,11 @@ export const sequences = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     playbookId: uuid("playbook_id").references(() => playbooks.id),
+    offeringId: uuid("offering_id"), // FK to offerings (nullable during migration)
     name: text("name").notNull(),
     isActive: boolean("is_active").default(true),
-    businessLine: text("business_line").default("real_estate"), // real_estate | life_insurance
+    // DEPRECATED: replaced by offeringId — remove once UI is off it
+    businessLine: text("business_line").default("real_estate"),
     // per-sequence strategy (overrides org defaults)
     strategy: text("strategy").default("balanced"), // aggressive | balanced | nurture | enterprise
     tone: text("tone"), // professional | consultative | direct | casual | challenger
@@ -313,6 +484,7 @@ export const messages = pgTable(
     contactSequenceId: uuid("contact_sequence_id").references(
       () => contactSequences.id
     ),
+    offeringId: uuid("offering_id"), // FK to offerings (nullable during migration)
     direction: messageDirectionEnum("direction").notNull(),
     channel: messageChannelEnum("channel").default("email"),
     subject: text("subject"),
