@@ -105,9 +105,11 @@ function buildSummary(p: PrioritiesResult): string {
 
 export default async function PrioritiesPage() {
   let p: PrioritiesResult = { reply: [], hot: [], cold: [], review: [], totalActionable: 0 };
+  let orgName: string | undefined;
 
   try {
     const org = await requireOrg();
+    orgName = org.name;
     p = await getPriorities(org.id);
   } catch {
     // DB not connected — show empty state
@@ -121,7 +123,7 @@ export default async function PrioritiesPage() {
       <div className="p-6 space-y-5 max-w-3xl">
 
         <div>
-          <h1 className="text-2xl font-bold">{getGreeting()}, Kanghuan 👋</h1>
+          <h1 className="text-2xl font-bold">{getGreeting()}{orgName ? `, ${orgName}` : ""} 👋</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
           </p>

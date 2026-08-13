@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { db } from "@/lib/db/client";
-import { contacts, organizations, playbooks, messages, orgLearnings } from "@/lib/db/schema";
+import { contacts, organizations, playbooks, messages, orgLearnings, offerings } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { generateCallScript } from "@/lib/ai/generate-call-script";
 import { requireOrg } from "@/lib/auth/current-org";
@@ -30,6 +30,16 @@ export async function POST(req: NextRequest) {
 
   if (!contact) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
 
+  // The offering this contact is tied to (drives the call's business context)
+  let offering = null;
+  if (contact.offeringId) {
+    const [off] = await db.select({ name: offerings.name, description: offerings.description })
+      .from(offerings)
+      .where(and(eq(offerings.id, contact.offeringId), eq(offerings.orgId, org.id)))
+      .limit(1);
+    offering = off ?? null;
+  }
+
   const script = await generateCallScript({
     contact,
     org: orgRow,
@@ -37,7 +47,7 @@ export async function POST(req: NextRequest) {
     learnings,
     priorMessages,
     callPurpose: callPurpose ?? "intro",
-    businessLine: (contact.businessLine ?? "real_estate") as "real_estate" | "life_insurance",
+    offering,
   });
 
   return NextResponse.json(script);

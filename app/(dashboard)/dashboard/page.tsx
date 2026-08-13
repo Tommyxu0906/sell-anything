@@ -2,10 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db/client";
-import { contacts, messages, activities, sequences } from "@/lib/db/schema";
+import { contacts, messages, activities, offerings, channelStrategies } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/current-org";
-import { eq, and, count, desc } from "drizzle-orm";
-import { Users, Mail, MessageSquare, Home, Shield, ArrowRight, Clock } from "lucide-react";
+import { eq, count, desc, inArray } from "drizzle-orm";
+import { CHANNEL_LABELS, type Channel } from "@/lib/strategy/channel-model";
+import { Users, Mail, MessageSquare, Package, Plus, ArrowRight, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { Header } from "@/components/dashboard/header";
@@ -17,198 +18,163 @@ function getGreeting() {
   return "Good evening";
 }
 
-async function getLineData(orgId: string, businessLine: string) {
-  const [
-    [{ leads }],
-    [{ pending }],
-    [{ sent }],
-    [{ replies }],
-  ] = await Promise.all([
-    db.select({ leads: count() }).from(contacts)
-      .where(and(eq(contacts.orgId, orgId), eq(contacts.businessLine, businessLine))),
-    db.select({ pending: count() }).from(messages)
-      .where(and(eq(messages.orgId, orgId), eq(messages.reviewStatus, "pending"))),
-    db.select({ sent: count() }).from(messages)
-      .where(and(eq(messages.orgId, orgId), eq(messages.reviewStatus, "sent"))),
-    db.select({ replies: count() }).from(messages)
-      .where(and(eq(messages.orgId, orgId), eq(messages.direction, "inbound"))),
-  ]);
-  return { leads, pending, sent, replies };
+interface DashData {
+  offerings: (typeof offerings.$inferSelect)[];
+  recommendedByOffering: Record<string, Channel[]>;
+  stats: { leads: number; sent: number; replies: number };
+  recentActivity: (typeof activities.$inferSelect)[];
 }
 
-async function getDashboardData(orgId: string) {
-  const [re, ins, recentActivity] = await Promise.all([
-    getLineData(orgId, "real_estate"),
-    getLineData(orgId, "life_insurance"),
-    db.select().from(activities).where(eq(activities.orgId, orgId))
-      .orderBy(desc(activities.createdAt)).limit(12),
+async function getDashboardData(orgId: string): Promise<DashData> {
+  const offeringRows = await db
+    .select()
+    .from(offerings)
+    .where(eq(offerings.orgId, orgId))
+    .orderBy(desc(offerings.createdAt));
+
+  const offeringIds = offeringRows.map((o) => o.id);
+
+  const [strategies, [{ leads }], [{ sent }], [{ replies }], recentActivity] = await Promise.all([
+    offeringIds.length
+      ? db.select().from(channelStrategies).where(inArray(channelStrategies.offeringId, offeringIds)).orderBy(desc(channelStrategies.createdAt))
+      : Promise.resolve([] as (typeof channelStrategies.$inferSelect)[]),
+    db.select({ leads: count() }).from(contacts).where(eq(contacts.orgId, orgId)),
+    db.select({ sent: count() }).from(messages).where(eq(messages.orgId, orgId)),
+    db.select({ replies: count() }).from(messages).where(eq(messages.orgId, orgId)),
+    db.select().from(activities).where(eq(activities.orgId, orgId)).orderBy(desc(activities.createdAt)).limit(10),
   ]);
-  return { re, ins, recentActivity };
+
+  const recommendedByOffering: Record<string, Channel[]> = {};
+  for (const s of strategies) {
+    if (!recommendedByOffering[s.offeringId]) {
+      recommendedByOffering[s.offeringId] = (s.recommended as Channel[]) ?? [];
+    }
+  }
+
+  return { offerings: offeringRows, recommendedByOffering, stats: { leads, sent, replies }, recentActivity };
 }
 
-const LINE_ACTIVITY_ICONS: Record<string, string> = {
-  email_sent: "✉️",
-  replied: "💬",
-  stage_changed: "📋",
-  note: "📝",
-  meeting_booked: "📅",
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  draft: { label: "Draft", cls: "bg-muted text-muted-foreground" },
+  researching: { label: "Researching", cls: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" },
+  ready: { label: "Ready", cls: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300" },
+  active: { label: "Active", cls: "bg-primary/10 text-primary" },
+};
+
+const ACTIVITY_ICONS: Record<string, string> = {
+  email_sent: "✉️", replied: "💬", stage_changed: "📋", note: "📝", meeting_booked: "📅",
 };
 
 export default async function DashboardPage() {
-  let data = {
-    re: { leads: 0, pending: 0, sent: 0, replies: 0 },
-    ins: { leads: 0, pending: 0, sent: 0, replies: 0 },
-    recentActivity: [] as (typeof activities.$inferSelect)[],
+  let data: DashData = {
+    offerings: [], recommendedByOffering: {}, stats: { leads: 0, sent: 0, replies: 0 }, recentActivity: [],
   };
+  let orgName: string | undefined;
 
   try {
     const org = await requireOrg();
+    orgName = org.name;
     data = await getDashboardData(org.id);
   } catch {
-    // DB not connected — show empty state
+    // DB not connected
   }
-
-  const totalPending = data.re.pending + data.ins.pending;
 
   return (
     <div>
       <Header title="Dashboard" />
       <div className="p-6 space-y-6">
 
-        {/* Personal greeting */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{getGreeting()}, Kanghuan 👋</h1>
+            <h1 className="text-2xl font-bold">{getGreeting()}{orgName ? `, ${orgName}` : ""} 👋</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
               {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
             </p>
           </div>
-          {totalPending > 0 && (
-            <Link href="/inbox">
-              <Button className="gap-2">
-                <Clock className="h-4 w-4" />
-                {totalPending} draft{totalPending !== 1 ? "s" : ""} to review
-                <ArrowRight className="h-3 w-3" />
-              </Button>
-            </Link>
+          <Link href="/onboard">
+            <Button className="gap-2"><Plus className="h-4 w-4" /> New offering</Button>
+          </Link>
+        </div>
+
+        {/* Stat row */}
+        <div className="grid grid-cols-3 gap-4">
+          <Stat icon={Users} label="Contacts" value={data.stats.leads} />
+          <Stat icon={Mail} label="Messages" value={data.stats.sent} />
+          <Stat icon={MessageSquare} label="Replies" value={data.stats.replies} />
+        </div>
+
+        {/* Offerings */}
+        <div>
+          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+            <Package className="h-4 w-4" /> Your offerings
+          </h2>
+
+          {data.offerings.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Sparkles className="h-8 w-8 mx-auto mb-3 text-primary" />
+                <p className="font-medium">Add your first offering</p>
+                <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+                  Describe what you&apos;re selling and we&apos;ll research the market and build a
+                  data-backed channel strategy.
+                </p>
+                <Link href="/onboard" className="inline-block mt-4">
+                  <Button className="gap-2"><Plus className="h-4 w-4" /> Get started</Button>
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {data.offerings.map((o) => {
+                const rec = data.recommendedByOffering[o.id] ?? [];
+                const badge = STATUS_BADGE[o.status ?? "draft"];
+                return (
+                  <Card key={o.id}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-sm font-semibold truncate">{o.name}</CardTitle>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${badge.cls}`}>
+                          {o.status === "researching" && <Loader2 className="inline h-2.5 w-2.5 mr-1 animate-spin" />}
+                          {badge.label}
+                        </span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-xs text-muted-foreground line-clamp-2">{o.description}</p>
+                      {rec.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {rec.slice(0, 3).map((c) => (
+                            <Badge key={c} variant="secondary" className="text-[10px]">
+                              {CHANNEL_LABELS[c] ?? c}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      <Link href={`/offerings/${o.id}/strategy`}>
+                        <Button variant="outline" size="sm" className="w-full gap-1 text-xs">
+                          {o.status === "ready" || o.status === "active" ? "View strategy" : "View progress"}
+                          <ArrowRight className="h-3 w-3" />
+                        </Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        {/* Two-panel business line overview */}
-        <div className="grid gap-4 lg:grid-cols-2">
-
-          {/* Real Estate */}
-          <Card className="border-orange-200/60 bg-orange-50/30 dark:border-orange-900/30 dark:bg-orange-950/10">
+        {/* Activity */}
+        {data.recentActivity.length > 0 && (
+          <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-orange-500/10">
-                    <Home className="h-4 w-4 text-orange-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold">Real Estate</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">Prophet Homes</p>
-                  </div>
-                </div>
-                {data.re.pending > 0 && (
-                  <Badge variant="destructive" className="text-xs">{data.re.pending} pending</Badge>
-                )}
-              </div>
+              <CardTitle className="text-base">Recent activity</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-2xl font-bold">{data.re.leads}</p>
-                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Users className="h-3 w-3" /> Leads</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{data.re.sent}</p>
-                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Mail className="h-3 w-3" /> Sent</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{data.re.replies}</p>
-                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><MessageSquare className="h-3 w-3" /> Replies</p>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Link href="/inbox?line=real_estate" className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full text-xs">Inbox</Button>
-                </Link>
-                <Link href="/contacts?line=real_estate" className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full text-xs">Contacts</Button>
-                </Link>
-                <Link href="/sequences?line=real_estate" className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full text-xs">Sequences</Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Life Insurance */}
-          <Card className="border-blue-200/60 bg-blue-50/30 dark:border-blue-900/30 dark:bg-blue-950/10">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-500/10">
-                    <Shield className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold">Life Insurance</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">National Life Group</p>
-                  </div>
-                </div>
-                {data.ins.pending > 0 && (
-                  <Badge variant="destructive" className="text-xs">{data.ins.pending} pending</Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-2xl font-bold">{data.ins.leads}</p>
-                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Users className="h-3 w-3" /> Leads</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{data.ins.sent}</p>
-                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Mail className="h-3 w-3" /> Sent</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{data.ins.replies}</p>
-                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><MessageSquare className="h-3 w-3" /> Replies</p>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Link href="/inbox?line=life_insurance" className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full text-xs">Inbox</Button>
-                </Link>
-                <Link href="/contacts?line=life_insurance" className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full text-xs">Contacts</Button>
-                </Link>
-                <Link href="/sequences?line=life_insurance" className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full text-xs">Sequences</Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Combined activity feed */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-base">Recent Activity</CardTitle>
-            <Link href="/contacts" className="text-xs text-primary hover:underline">View all contacts</Link>
-          </CardHeader>
-          <CardContent>
-            {data.recentActivity.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                <p className="text-2xl mb-2">🤖</p>
-                <p>No activity yet — AI starts working after you enroll contacts in a sequence.</p>
-              </div>
-            ) : (
+            <CardContent>
               <div className="space-y-2">
                 {data.recentActivity.map((a) => (
                   <div key={a.id} className="flex items-start gap-3 py-1.5 text-sm border-b last:border-0">
-                    <span className="text-base leading-none mt-0.5">{LINE_ACTIVITY_ICONS[a.type] ?? "•"}</span>
+                    <span className="text-base leading-none mt-0.5">{ACTIVITY_ICONS[a.type] ?? "•"}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm leading-snug">{a.description}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -218,16 +184,26 @@ export default async function DashboardPage() {
                   </div>
                 ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Cross-sell reminder */}
-        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground mb-1">💡 Cross-sell opportunity</p>
-          <p>Every real estate client is a potential insurance client. New homeowners especially — they just took on a mortgage and need protection coverage. Flag them with <code className="text-xs bg-muted px-1 py-0.5 rounded">businessLine = life_insurance</code> to add to an insurance sequence too.</p>
-        </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
+  );
+}
+
+function Stat({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: number }) {
+  return (
+    <Card>
+      <CardContent className="py-4 flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="text-xl font-bold leading-none">{value}</p>
+          <p className="text-xs text-muted-foreground mt-1">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

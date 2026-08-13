@@ -33,6 +33,11 @@ const CallScriptSchema = z.object({
 
 export type CallScript = z.infer<typeof CallScriptSchema>;
 
+interface OfferingLite {
+  name: string;
+  description: string;
+}
+
 interface GenerateCallScriptParams {
   contact: Contact;
   org: Org;
@@ -40,7 +45,8 @@ interface GenerateCallScriptParams {
   learnings?: OrgLearning[];
   priorMessages?: Message[];
   callPurpose?: "intro" | "follow_up" | "re_engage" | "close";
-  businessLine?: "real_estate" | "life_insurance";
+  /** What's being sold on this call — drives the business context. */
+  offering?: OfferingLite | null;
 }
 
 export async function generateCallScript({
@@ -50,7 +56,7 @@ export async function generateCallScript({
   learnings,
   priorMessages = [],
   callPurpose = "intro",
-  businessLine = "real_estate",
+  offering = null,
 }: GenerateCallScriptParams): Promise<CallScript> {
   const playbookPrefix = buildPlaybookPrefix({ org, playbook, learnings });
   const language = contact.preferredLanguage ?? "english";
@@ -74,16 +80,16 @@ export async function generateCallScript({
   const languageInstruction = isMandarin
     ? `IMPORTANT: Write the ENTIRE script in natural Simplified Chinese (普通话). This contact prefers Mandarin.
        Make it sound like natural spoken Chinese — not translated English. Warm, conversational, not formal.
-       Opener example: "您好，我是[Name]，是波士顿的${businessLine === "real_estate" ? "房产经纪人" : "金融顾问"}，之前给您发过邮件…"`
+       Opener example: "您好，我是[Name]，之前给您发过邮件，想跟您简单聊两句…"`
     : isBilingual
     ? `Write the script in English, but add a (中文备选) note after the opener and voicemail
        showing the Mandarin version — in case they're more comfortable switching mid-call.`
     : `Write in English. Conversational American professional tone.`;
 
-  const businessContext = businessLine === "real_estate"
-    ? `Business line: Real Estate (Prophet Homes). You help investors and families find properties in Greater Boston.`
-    : `Business line: Life Insurance (National Life Group). Educational, never pushy.
-       Help them understand their protection gaps. Never quote specific premiums on a cold call.`;
+  const businessContext = offering
+    ? `What you're selling: ${offering.name} — ${offering.description}
+       Ground the call in this specific offering and the value it delivers to this contact.`
+    : `Ground the call in ${org.name}'s value proposition (see the playbook above).`;
 
   const { object } = await generateObject({
     model: anthropic("claude-sonnet-4-6"),

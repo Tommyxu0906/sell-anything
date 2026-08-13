@@ -8,30 +8,34 @@ import {
   Inbox,
   ListChecks,
   Settings,
-  Home,
-  Shield,
   Sun,
+  Package,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const RE_NAV = [
-  { href: "/contacts?line=real_estate", label: "Contacts", icon: Users, match: "/contacts" },
-  { href: "/inbox?line=real_estate", label: "Inbox", icon: Inbox, match: "/inbox" },
-  { href: "/sequences?line=real_estate", label: "Sequences", icon: ListChecks, match: "/sequences" },
-];
+export interface SidebarOffering {
+  id: string;
+  name: string;
+  status: string | null;
+}
 
-const INS_NAV = [
-  { href: "/contacts?line=life_insurance", label: "Contacts", icon: Users, match: "/contacts" },
-  { href: "/inbox?line=life_insurance", label: "Inbox", icon: Inbox, match: "/inbox" },
-  { href: "/sequences?line=life_insurance", label: "Sequences", icon: ListChecks, match: "/sequences" },
-];
+const STATUS_DOT: Record<string, string> = {
+  draft: "bg-muted-foreground/40",
+  researching: "bg-amber-400 animate-pulse",
+  ready: "bg-green-500",
+  active: "bg-primary",
+};
 
-function NavItem({ href, label, icon: Icon, active }: { href: string; label: string; icon: React.ElementType; active: boolean }) {
+function NavLink({
+  href, label, icon: Icon, active, indent,
+}: { href: string; label: string; icon: React.ElementType; active: boolean; indent?: boolean }) {
   return (
     <Link
       href={href}
       className={cn(
         "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        indent && "pl-8",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -43,110 +47,93 @@ function NavItem({ href, label, icon: Icon, active }: { href: string; label: str
   );
 }
 
-export function Sidebar() {
+export function Sidebar({
+  orgName,
+  offerings = [],
+}: {
+  orgName?: string;
+  offerings?: SidebarOffering[];
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const line = searchParams.get("line");
-
-  const isActive = (navHref: string, matchPath: string, navLine: string) => {
-    return pathname.startsWith(matchPath) && line === navLine;
-  };
+  const activeOffering = searchParams.get("offering");
+  const initial = (orgName ?? "S").charAt(0).toUpperCase();
 
   return (
     <aside className="flex h-full w-56 flex-col border-r bg-background">
       {/* Identity */}
       <div className="border-b px-4 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold mb-3">
-          K
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm font-bold mb-3">
+          {initial}
         </div>
-        <p className="font-semibold text-sm leading-tight">Kanghuan Xu</p>
-        <p className="text-xs text-muted-foreground mt-0.5">Greater Boston</p>
+        <p className="font-semibold text-sm leading-tight truncate">{orgName ?? "sellAnything"}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Sales strategy engine</p>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
         {/* Overview */}
         <div className="space-y-0.5">
-          <Link
-            href="/priorities"
-            className={cn(
-              "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors",
-              pathname === "/priorities"
-                ? "bg-primary text-primary-foreground"
-                : "text-foreground hover:bg-accent hover:text-accent-foreground"
-            )}
-          >
-            <Sun className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-            Today
-          </Link>
-          <Link
-            href="/dashboard"
-            className={cn(
-              "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              pathname === "/dashboard"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            )}
-          >
-            <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
-            Dashboard
-          </Link>
+          <NavLink href="/priorities" label="Today" icon={Sun} active={pathname === "/priorities"} />
+          <NavLink href="/dashboard" label="Dashboard" icon={LayoutDashboard} active={pathname === "/dashboard"} />
         </div>
 
-        {/* Real Estate */}
+        {/* Offerings */}
         <div>
-          <div className="flex items-center gap-1.5 px-3 mb-1.5">
-            <Home className="h-3 w-3 text-orange-500" />
-            <p className="text-xs font-semibold text-orange-500 uppercase tracking-wider">Real Estate</p>
+          <div className="flex items-center justify-between px-3 mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <Package className="h-3 w-3 text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Offerings</p>
+            </div>
+            <Link href="/onboard" className="text-muted-foreground hover:text-foreground" title="New offering">
+              <Plus className="h-3.5 w-3.5" />
+            </Link>
           </div>
-          <p className="px-3 text-[10px] text-muted-foreground mb-2">Prophet Homes</p>
+
           <div className="space-y-0.5">
-            {RE_NAV.map(({ href, label, icon, match }) => (
-              <NavItem
-                key={href}
-                href={href}
-                label={label}
-                icon={icon}
-                active={isActive(href, match, "real_estate")}
-              />
-            ))}
+            {offerings.length === 0 ? (
+              <Link
+                href="/onboard"
+                className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add your first offering
+              </Link>
+            ) : (
+              offerings.map((o) => {
+                const isActive = pathname.startsWith(`/offerings/${o.id}`) || activeOffering === o.id;
+                return (
+                  <Link
+                    key={o.id}
+                    href={`/offerings/${o.id}/strategy`}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+                      isActive
+                        ? "bg-accent text-accent-foreground font-medium"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", STATUS_DOT[o.status ?? "draft"] ?? "bg-muted")} />
+                    <span className="truncate">{o.name}</span>
+                  </Link>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Life Insurance */}
+        {/* Workspace */}
         <div>
-          <div className="flex items-center gap-1.5 px-3 mb-1.5">
-            <Shield className="h-3 w-3 text-blue-500" />
-            <p className="text-xs font-semibold text-blue-500 uppercase tracking-wider">Life Insurance</p>
-          </div>
-          <p className="px-3 text-[10px] text-muted-foreground mb-2">National Life Group</p>
+          <p className="px-3 mb-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Workspace</p>
           <div className="space-y-0.5">
-            {INS_NAV.map(({ href, label, icon, match }) => (
-              <NavItem
-                key={href}
-                href={href}
-                label={label}
-                icon={icon}
-                active={isActive(href, match, "life_insurance")}
-              />
-            ))}
+            <NavLink href="/contacts" label="Contacts" icon={Users} active={pathname.startsWith("/contacts")} />
+            <NavLink href="/inbox" label="Inbox" icon={Inbox} active={pathname.startsWith("/inbox")} />
+            <NavLink href="/sequences" label="Sequences" icon={ListChecks} active={pathname.startsWith("/sequences")} />
           </div>
         </div>
       </nav>
 
       {/* Settings */}
       <div className="border-t p-2">
-        <Link
-          href="/settings"
-          className={cn(
-            "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-            pathname.startsWith("/settings")
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          )}
-        >
-          <Settings className="h-3.5 w-3.5 shrink-0" />
-          Settings
-        </Link>
+        <NavLink href="/settings" label="Settings" icon={Settings} active={pathname.startsWith("/settings")} />
       </div>
     </aside>
   );
