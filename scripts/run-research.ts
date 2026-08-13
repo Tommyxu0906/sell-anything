@@ -15,9 +15,12 @@ import { runResearchPipeline } from "@/lib/research/pipeline";
 import { CHANNEL_LABELS, type ChannelScore, type Channel } from "@/lib/strategy/channel-model";
 
 async function main() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("✖ ANTHROPIC_API_KEY is not set — the pipeline can't call Claude.");
-    console.error("  Add it to .env.local and re-run.");
+  const key = process.env.ANTHROPIC_API_KEY ?? "";
+  // A real key is ~100+ chars; reject obvious placeholders so the failure is
+  // clear rather than a cryptic 404 from the API rejecting the fake key.
+  if (!key.startsWith("sk-ant-") || key.length < 40 || /placeholder|example|xxx|your/i.test(key)) {
+    console.error("✖ ANTHROPIC_API_KEY is missing or a placeholder — the pipeline can't call Claude.");
+    console.error("  Put a real key (sk-ant-…, ~100+ chars) in .env.local, then re-run:  pnpm research");
     process.exit(1);
   }
 
