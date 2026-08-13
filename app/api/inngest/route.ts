@@ -4,8 +4,9 @@ import { runSequence } from "@/lib/inngest/functions/run-sequence";
 import { handleReply } from "@/lib/inngest/functions/handle-reply";
 import { prospectDaily } from "@/lib/inngest/functions/prospect-daily";
 import { analyzePerformance } from "@/lib/inngest/functions/analyze-performance";
+import { researchOffering } from "@/lib/inngest/functions/research-offering";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [runSequence, handleReply, prospectDaily, analyzePerformance],
+  functions: [runSequence, handleReply, prospectDaily, analyzePerformance, researchOffering],
 });

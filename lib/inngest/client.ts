@@ -27,6 +27,12 @@ export type Events = {
       orgId: string;
     };
   };
+  "research/offering": {
+    data: {
+      orgId: string;
+      offeringId: string;
+    };
+  };
   "meeting/book": {
     data: {
       orgId: string;
