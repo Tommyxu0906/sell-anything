@@ -12,6 +12,20 @@ export async function saveAutonomySettings(orgId: string, settings: Record<strin
   revalidatePath("/settings");
 }
 
+export async function saveVoiceProfile(
+  orgId: string,
+  data: { voiceProfile: string; signatureName: string }
+) {
+  await db.update(organizations)
+    .set({
+      voiceProfile: data.voiceProfile.trim() || null,
+      signatureName: data.signatureName.trim() || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(organizations.id, orgId));
+  revalidatePath("/settings");
+}
+
 export async function savePlaybook(
   playbookId: string,
   data: { valueProp: string; brandVoice: string; icpDescription: string; caseStudies: string }

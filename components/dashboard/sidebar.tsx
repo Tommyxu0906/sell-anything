@@ -10,6 +10,7 @@ import {
   Settings,
   Home,
   Shield,
+  Sun,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +65,19 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
         {/* Overview */}
-        <div>
+        <div className="space-y-0.5">
+          <Link
+            href="/priorities"
+            className={cn(
+              "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors",
+              pathname === "/priorities"
+                ? "bg-primary text-primary-foreground"
+                : "text-foreground hover:bg-accent hover:text-accent-foreground"
+            )}
+          >
+            <Sun className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+            Today
+          </Link>
           <Link
             href="/dashboard"
             className={cn(

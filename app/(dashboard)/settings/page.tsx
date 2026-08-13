@@ -2,6 +2,7 @@ import { Header } from "@/components/dashboard/header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AutonomySettings } from "./autonomy-settings";
 import { PlaybookSettings } from "./playbook-settings";
+import { VoiceSettings } from "./voice-settings";
 import { requireOrg } from "@/lib/auth/current-org";
 import { db } from "@/lib/db/client";
 import { playbooks } from "@/lib/db/schema";
@@ -55,15 +56,29 @@ export default async function SettingsPage() {
             <PlaybookSettings playbook={insPlaybook} label="Life Insurance" />
           </TabsContent>
 
-          <TabsContent value="preferences" className="mt-6">
-            <div className="mb-4">
-              <h2 className="text-base font-semibold">AI Autonomy Preferences</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">Control how much the AI does automatically vs. waiting for your review.</p>
+          <TabsContent value="preferences" className="mt-6 space-y-8">
+            <div>
+              <div className="mb-4">
+                <h2 className="text-base font-semibold">Voice & Humanization</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">Teach the AI to write and speak like you — applied to every email, reply, and call script.</p>
+              </div>
+              <VoiceSettings
+                orgId={org?.id}
+                initialVoice={org?.voiceProfile}
+                initialSignature={org?.signatureName}
+              />
             </div>
-            <AutonomySettings
-              orgId={org?.id}
-              initialSettings={(org?.autonomySettings as Record<string, string>) ?? {}}
-            />
+
+            <div>
+              <div className="mb-4">
+                <h2 className="text-base font-semibold">AI Autonomy</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">Control how much the AI does automatically vs. waiting for your review.</p>
+              </div>
+              <AutonomySettings
+                orgId={org?.id}
+                initialSettings={(org?.autonomySettings as Record<string, string>) ?? {}}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

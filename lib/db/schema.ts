@@ -95,6 +95,9 @@ export const organizations = pgTable("organizations", {
   // compliance
   physicalAddress: text("physical_address"),
   unsubscribeFooter: text("unsubscribe_footer"),
+  // personal voice — 3-5 sentences of how you actually write/speak, injected into every draft + call script
+  voiceProfile: text("voice_profile"),
+  signatureName: text("signature_name"), // how you sign off, e.g. "Kanghuan" or "康欢"
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
